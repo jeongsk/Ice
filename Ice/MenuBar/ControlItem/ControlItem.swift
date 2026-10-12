@@ -24,8 +24,31 @@ final class ControlItem {
     /// Possible lengths for control items.
     enum Lengths {
         static let standard: CGFloat = NSStatusItem.variableLength
-        static let expanded: CGFloat = 10_000
+
+        /// The length used to push the items in a section out of the menu bar.
+        @MainActor static var expanded: CGFloat {
+            guard isStatusItemHostedByMenuBarAgent else {
+                return 10_000
+            }
+            // On macOS 27 and later, MenuBarAgent removes any status item whose
+            // window (its length plus 16 points of padding) is wider than half of
+            // the screen, instead of pushing the items to its left out of the menu
+            // bar. Stay below that limit so that the items to the left of the
+            // control item are moved into the system overflow menu. Use the
+            // narrowest screen, as the item is shown in the menu bar of each one.
+            guard let screenWidth = NSScreen.screens.map(\.frame.width).min() else {
+                return 10_000
+            }
+            return max((screenWidth / 2).rounded(.down) - 20, 0)
+        }
     }
+
+    /// A Boolean value that indicates whether status items are hosted by the
+    /// MenuBarAgent process (macOS 27 and later), rather than being windows
+    /// owned by the window server.
+    static let isStatusItemHostedByMenuBarAgent = !NSRunningApplication
+        .runningApplications(withBundleIdentifier: "com.apple.MenuBarAgent")
+        .isEmpty
 
     /// The control item's hiding state (`@Published`).
     @Published var state = HidingState.hideItems
@@ -148,8 +171,15 @@ final class ControlItem {
             }
             .store(in: &c)
 
-        Publishers.CombineLatest($isVisible, $state)
-            .sink { [weak self] (isVisible, state) in
+        // The expanded length depends on the screen size on macOS 27 and later,
+        // so recompute it when the screen parameters change.
+        let screenParametersChanged = NotificationCenter.default
+            .publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .map { _ in () }
+            .prepend(())
+
+        Publishers.CombineLatest3($isVisible, $state, screenParametersChanged)
+            .sink { [weak self] (isVisible, state, _) in
                 guard
                     let self,
                     let section
