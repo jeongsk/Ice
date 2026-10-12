@@ -84,6 +84,18 @@ final class ControlItem {
     /// The control item's underlying status item.
     private let statusItem: NSStatusItem
 
+    /// An additional, empty status item that is placed directly to the left of
+    /// the control item while it hides its section (macOS 27 and later).
+    ///
+    /// MenuBarAgent limits the length of a status item to about half of the
+    /// screen, which isn't always enough to push every item to the left of the
+    /// control item out of the menu bar, so the items that still fit would come
+    /// and go as the width of the application menus changes. When an item
+    /// doesn't fit, MenuBarAgent moves it, along with every item to its left,
+    /// into the overflow menu. The filler item never fits next to the expanded
+    /// control item, so all of the section's items are reliably hidden.
+    private var fillerItem: NSStatusItem?
+
     /// A horizontal constraint for the control item's content view.
     private let constraint: NSLayoutConstraint?
 
@@ -188,6 +200,44 @@ final class ControlItem {
         let cached = StatusItemDefaults[.preferredPosition, autosaveName]
         NSStatusBar.system.removeStatusItem(statusItem)
         StatusItemDefaults[.preferredPosition, autosaveName] = cached
+        if let fillerItem {
+            NSStatusBar.system.removeStatusItem(fillerItem)
+        }
+    }
+
+    /// Adds or removes the filler item, depending on whether the control item
+    /// is expanded to hide its section.
+    private func updateFillerItem(isExpanded: Bool) {
+        guard Self.isStatusItemHostedByMenuBarAgent else {
+            return
+        }
+        // Only add the filler item when the control item is actually in the
+        // menu bar and has a known position to place the filler item next to.
+        let position = StatusItemDefaults[.preferredPosition, identifier.rawValue]
+        guard
+            isExpanded,
+            statusItem.isVisible,
+            let position
+        else {
+            if let fillerItem {
+                let autosaveName = fillerItem.autosaveName as String
+                NSStatusBar.system.removeStatusItem(fillerItem)
+                StatusItemDefaults[.preferredPosition, autosaveName] = nil
+                self.fillerItem = nil
+            }
+            return
+        }
+        if fillerItem == nil {
+            // Place the filler item directly to the left of the control item's
+            // current position, which may have been changed by the user.
+            let autosaveName = identifier.rawValue + "Filler"
+            StatusItemDefaults[.preferredPosition, autosaveName] = position + 0.5
+            let fillerItem = NSStatusBar.system.statusItem(withLength: 0)
+            fillerItem.autosaveName = autosaveName
+            fillerItem.button?.cell?.isEnabled = false
+            self.fillerItem = fillerItem
+        }
+        fillerItem?.length = Lengths.expanded
     }
 
     /// Configures the internal observers for the control item.
@@ -224,8 +274,10 @@ final class ControlItem {
                         case .showItems: Lengths.standard
                         }
                     }
+                    updateFillerItem(isExpanded: section.name != .visible && state == .hideItems)
                     constraint?.isActive = true
                 } else {
+                    updateFillerItem(isExpanded: false)
                     statusItem.length = 0
                     constraint?.isActive = false
                     if let window {
