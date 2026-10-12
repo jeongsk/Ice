@@ -13,6 +13,9 @@ final class IceBarPanel: NSPanel {
 
     private(set) var currentSection: MenuBarSection.Name?
 
+    /// The screen that the panel was last shown on.
+    private weak var targetScreen: NSScreen?
+
     private lazy var colorManager = IceBarColorManager(iceBarPanel: self)
 
     private var cancellables = Set<AnyCancellable>()
@@ -84,9 +87,11 @@ final class IceBarPanel: NSPanel {
             .map(\.size)
             .removeDuplicates()
             .sink { [weak self] _ in
+                // The panel may not be on a screen yet if its size was zero when
+                // its origin was last updated, so fall back to the target screen.
                 guard
                     let self,
-                    let screen
+                    let screen = screen ?? targetScreen
                 else {
                     return
                 }
@@ -163,20 +168,24 @@ final class IceBarPanel: NSPanel {
 
         await appState.itemManager.cacheItemsIfNeeded()
 
-        if
-            ControlItem.isStatusItemHostedByMenuBarAgent,
-            let dividerX = appState.menuBarManager.section(withName: .hidden)?.controlItem.window?.frame.midX
-        {
-            await appState.accessibilityItems.updateHiddenItems(dividerX: dividerX)
+        if ControlItem.isStatusItemHostedByMenuBarAgent {
+            await appState.accessibilityItems.updateHiddenItems()
         }
 
         if ScreenCapture.cachedCheckPermissions() {
             await appState.imageCache.updateCache()
         }
 
-        contentView = IceBarHostingView(appState: appState, colorManager: colorManager, screen: screen, section: section) { [weak self] in
+        let hostingView = IceBarHostingView(appState: appState, colorManager: colorManager, screen: screen, section: section) { [weak self] in
             self?.close()
         }
+        contentView = hostingView
+        targetScreen = screen
+
+        // Size the panel to fit its content before positioning it, so that it
+        // isn't positioned using a zero size.
+        hostingView.layoutSubtreeIfNeeded()
+        setContentSize(hostingView.fittingSize)
 
         updateOrigin(for: screen)
 

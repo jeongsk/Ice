@@ -184,6 +184,12 @@ final class AppState: ObservableObject {
     func performSetup() {
         configureCancellables()
         permissionsManager.stopAllChecks()
+        if ControlItem.isStatusItemHostedByMenuBarAgent {
+            // Capture images of the menu bar items for the Ice Bar before
+            // they are hidden. On macOS 27 and later, they can only be
+            // captured while they are shown in the menu bar.
+            accessibilityItems.captureVisibleItemImages()
+        }
         menuBarManager.performSetup()
         appearanceManager.performSetup()
         eventManager.performSetup()

@@ -93,7 +93,16 @@ final class IceBarColorManager: ObservableObject {
 
     private func updateWindowImage(for screen: NSScreen) {
         let displayID = screen.displayID
-        if
+        if ControlItem.isStatusItemHostedByMenuBarAgent {
+            // On macOS 27 and later, the menu bar window only contains a blank
+            // backdrop, so capture the menu bar's area of the screen instead.
+            let bounds = CGDisplayBounds(displayID)
+            let menuBarHeight = screen.getMenuBarHeight() ?? NSStatusBar.system.thickness
+            windowImage = ScreenCapture.captureScreenBounds(
+                CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: menuBarHeight),
+                option: .nominalResolution
+            )
+        } else if
             let window = WindowInfo.getMenuBarWindow(for: displayID),
             let image = ScreenCapture.captureWindow(window.windowID, option: .nominalResolution)
         {

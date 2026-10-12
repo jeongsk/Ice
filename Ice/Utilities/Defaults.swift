@@ -175,6 +175,7 @@ extension Defaults {
 
         case iceBarLocation = "IceBarLocation"
         case iceBarPinnedLocation = "IceBarPinnedLocation"
+        case accessibilityItemPositions = "AccessibilityItemPositions"
 
         // MARK: Migration
 
