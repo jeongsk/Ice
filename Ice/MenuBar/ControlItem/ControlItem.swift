@@ -66,7 +66,10 @@ final class ControlItem {
         guard let window else {
             return nil
         }
-        return CGWindowID(window.windowNumber)
+        // On macOS 27 and later, status item windows are hosted by MenuBarAgent, and
+        // their window numbers are not valid window server identifiers (they can be
+        // larger than `UInt32.max`), so use a failable conversion to avoid trapping.
+        return CGWindowID(exactly: window.windowNumber)
     }
 
     /// A Boolean value that indicates whether the control item serves as
