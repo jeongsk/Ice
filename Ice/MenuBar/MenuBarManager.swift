@@ -245,7 +245,13 @@ final class MenuBarManager: ObservableObject {
             bounds.origin.x = bounds.maxX - (bounds.width / 4)
             bounds.size.width /= 4
 
-            image = ScreenCapture.captureWindow(window.windowID, screenBounds: bounds, option: .nominalResolution)
+            image = if ControlItem.isStatusItemHostedByMenuBarAgent {
+                // On macOS 27 and later, the menu bar window only contains a blank
+                // backdrop, so capture the menu bar's area of the screen instead.
+                ScreenCapture.captureScreenBounds(bounds, option: .nominalResolution)
+            } else {
+                ScreenCapture.captureWindow(window.windowID, screenBounds: bounds, option: .nominalResolution)
+            }
             source = .menuBarWindow
         } else if let window = WindowInfo.getWallpaperWindow(from: windows, for: displayID) {
             var bounds = window.frame

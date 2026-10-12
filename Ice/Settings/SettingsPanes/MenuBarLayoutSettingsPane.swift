@@ -23,18 +23,38 @@ struct MenuBarLayoutSettingsPane: View {
 
     @ViewBuilder
     private var header: some View {
-        Text("Drag to arrange your menu bar items")
-            .font(.title2)
+        if ControlItem.isStatusItemHostedByMenuBarAgent {
+            // On macOS 27 and later, Ice can't move menu bar items, but they
+            // can still be arranged by Command + dragging them in the menu bar.
+            Text("Your menu bar items")
+                .font(.title2)
 
-        IceGroupBox {
-            AnnotationView(
-                alignment: .center,
-                font: .callout.bold()
-            ) {
-                Label {
-                    Text("Tip: you can also arrange menu bar items by Command + dragging them in the menu bar")
-                } icon: {
-                    Image(systemName: "lightbulb")
+            IceGroupBox {
+                AnnotationView(
+                    alignment: .center,
+                    font: .callout.bold()
+                ) {
+                    Label {
+                        Text("Arrange menu bar items by Command + dragging them in the menu bar. To move hidden items, show the hidden section in the menu bar first.")
+                    } icon: {
+                        Image(systemName: "lightbulb")
+                    }
+                }
+            }
+        } else {
+            Text("Drag to arrange your menu bar items")
+                .font(.title2)
+
+            IceGroupBox {
+                AnnotationView(
+                    alignment: .center,
+                    font: .callout.bold()
+                ) {
+                    Label {
+                        Text("Tip: you can also arrange menu bar items by Command + dragging them in the menu bar")
+                    } icon: {
+                        Image(systemName: "lightbulb")
+                    }
                 }
             }
         }
@@ -84,6 +104,7 @@ struct MenuBarLayoutSettingsPane: View {
 
                 LayoutBar(section: section)
                     .environmentObject(appState.imageCache)
+                    .environmentObject(appState.accessibilityItems)
             }
         }
     }

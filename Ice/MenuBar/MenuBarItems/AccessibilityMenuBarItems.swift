@@ -46,6 +46,9 @@ final class AccessibilityMenuBarItems: ObservableObject {
     /// The items in the hidden section, ordered from left to right.
     @Published private(set) var hiddenItems = [AccessibilityMenuBarItem]()
 
+    /// The items in the visible section, ordered from left to right.
+    @Published private(set) var visibleItems = [AccessibilityMenuBarItem]()
+
     /// Images of items, keyed by item identifier, that were captured the last
     /// time the items were visible in the menu bar.
     @Published private(set) var images = [String: NSImage]()
@@ -126,18 +129,34 @@ final class AccessibilityMenuBarItems: ObservableObject {
         return items
     }
 
-    /// Updates the items in the hidden section.
+    /// Updates the items in the hidden and visible sections.
     ///
     /// The frames of items in MenuBarAgent's overflow menu are not updated, so
     /// they can't be used to tell whether an item is hidden. Instead, an item
     /// is hidden if it isn't the element at the center of its frame.
-    func updateHiddenItems() async {
-        let items = await Task.detached {
-            Self.getItems().filter { !Self.isVisible($0) }
+    ///
+    /// - Parameter dividerX: The x coordinate of the center of the hidden
+    ///   section's control item. Items that are shown to its left belong to
+    ///   the hidden section, i.e. while the hidden section is shown.
+    func updateSectionItems(dividerX: CGFloat?) async {
+        let classifiedItems = await Task.detached {
+            Self.getItems().map { item in (item, Self.isVisible(item)) }
         }.value
-        hiddenItems = items.sorted { lhs, rhs in
+        var hiddenItems = [AccessibilityMenuBarItem]()
+        var visibleItems = [AccessibilityMenuBarItem]()
+        for (item, isVisible) in classifiedItems {
+            if !isVisible {
+                hiddenItems.append(item)
+            } else if let dividerX, item.frame.midX < dividerX {
+                hiddenItems.append(item)
+            } else {
+                visibleItems.append(item)
+            }
+        }
+        self.hiddenItems = hiddenItems.sorted { lhs, rhs in
             (positions[lhs.id] ?? lhs.frame.minX) < (positions[rhs.id] ?? rhs.frame.minX)
         }
+        self.visibleItems = visibleItems.sorted { $0.frame.minX < $1.frame.minX }
     }
 
     /// Returns a Boolean value that indicates whether the given item is the

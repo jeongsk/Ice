@@ -169,7 +169,8 @@ final class IceBarPanel: NSPanel {
         await appState.itemManager.cacheItemsIfNeeded()
 
         if ControlItem.isStatusItemHostedByMenuBarAgent {
-            await appState.accessibilityItems.updateHiddenItems()
+            let dividerX = appState.menuBarManager.section(withName: .hidden)?.controlItem.window?.frame.midX
+            await appState.accessibilityItems.updateSectionItems(dividerX: dividerX)
         }
 
         if ScreenCapture.cachedCheckPermissions() {
