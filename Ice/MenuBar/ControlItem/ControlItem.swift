@@ -50,6 +50,25 @@ final class ControlItem {
         .runningApplications(withBundleIdentifier: "com.apple.MenuBarAgent")
         .isEmpty
 
+    /// Moves the Ice icon off of the preferred position 0, which MenuBarAgent
+    /// does not treat as the rightmost position, keeping the hidden section's
+    /// divider to the left of the Ice icon.
+    private static func migratePreferredPositionsForMenuBarAgent() {
+        let iceIcon = Identifier.iceIcon.rawValue
+        let hidden = Identifier.hidden.rawValue
+        let alwaysHidden = Identifier.alwaysHidden.rawValue
+        guard StatusItemDefaults[.preferredPosition, iceIcon] == 0 else {
+            return
+        }
+        StatusItemDefaults[.preferredPosition, iceIcon] = 1
+        if let position = StatusItemDefaults[.preferredPosition, hidden], position <= 1 {
+            StatusItemDefaults[.preferredPosition, hidden] = 2
+        }
+        if let position = StatusItemDefaults[.preferredPosition, alwaysHidden], position <= 2 {
+            StatusItemDefaults[.preferredPosition, alwaysHidden] = 3
+        }
+    }
+
     /// The control item's hiding state (`@Published`).
     @Published var state = HidingState.hideItems
 
@@ -111,14 +130,24 @@ final class ControlItem {
     init(identifier: Identifier, appState: AppState) {
         let autosaveName = identifier.rawValue
 
+        // On macOS 27 and later, MenuBarAgent treats a preferred position of 0
+        // as no preference, rather than as the rightmost position, so the Ice
+        // icon would be placed to the left of the hidden section's divider and
+        // be hidden along with the section. Start the positions at 1 instead.
+        let basePosition: CGFloat = Self.isStatusItemHostedByMenuBarAgent ? 1 : 0
+
+        if Self.isStatusItemHostedByMenuBarAgent {
+            Self.migratePreferredPositionsForMenuBarAgent()
+        }
+
         // If the status item doesn't have a preferred position, set it
         // according to the identifier.
         if StatusItemDefaults[.preferredPosition, autosaveName] == nil {
             switch identifier {
             case .iceIcon:
-                StatusItemDefaults[.preferredPosition, autosaveName] = 0
+                StatusItemDefaults[.preferredPosition, autosaveName] = basePosition
             case .hidden:
-                StatusItemDefaults[.preferredPosition, autosaveName] = 1
+                StatusItemDefaults[.preferredPosition, autosaveName] = basePosition + 1
             case .alwaysHidden:
                 break
             }
@@ -306,7 +335,7 @@ final class ControlItem {
                     else {
                         return
                     }
-                    if useIceBar {
+                    if useIceBar && !Self.isStatusItemHostedByMenuBarAgent {
                         button.sendAction(on: [.leftMouseDown, .rightMouseUp])
                     } else {
                         button.sendAction(on: [.leftMouseUp, .rightMouseUp])

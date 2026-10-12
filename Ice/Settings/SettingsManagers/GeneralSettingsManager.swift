@@ -27,6 +27,16 @@ final class GeneralSettingsManager: ObservableObject {
     /// in a separate bar below the menu bar.
     @Published var useIceBar = false
 
+    /// A Boolean value that indicates whether the Ice Bar should actually be
+    /// used to show hidden items.
+    ///
+    /// On macOS 27 and later, Ice can't currently capture images of menu bar
+    /// items, so the Ice Bar would be empty. In that case, show the items
+    /// in the menu bar instead.
+    var isIceBarEnabled: Bool {
+        useIceBar && !ControlItem.isStatusItemHostedByMenuBarAgent
+    }
+
     /// The location where the Ice Bar appears.
     @Published var iceBarLocation: IceBarLocation = .dynamic
 

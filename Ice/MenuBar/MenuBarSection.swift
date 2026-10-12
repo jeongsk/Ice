@@ -51,7 +51,7 @@ final class MenuBarSection {
 
     /// A Boolean value that indicates whether the Ice Bar should be used.
     private var useIceBar: Bool {
-        appState?.settingsManager.generalSettingsManager.useIceBar ?? false
+        appState?.settingsManager.generalSettingsManager.isIceBarEnabled ?? false
     }
 
     /// A weak reference to the menu bar manager's Ice Bar panel.

@@ -24,6 +24,13 @@ final class EventManager {
         guard let self else {
             return event
         }
+        // On macOS 27 and later, a click on one of Ice's own status items is
+        // received by both the local and global monitors, as the items are
+        // hosted by MenuBarAgent. Only handle the global copy, or actions such
+        // as toggling a section cancel themselves out.
+        if isLocalStatusItemEventDuplicate(event) {
+            return event
+        }
         switch event.type {
         case .leftMouseDown:
             handleShowOnClick()
@@ -142,6 +149,25 @@ final class EventManager {
 // MARK: - Handlers
 
 extension EventManager {
+
+    // MARK: Deduplicate Status Item Events
+
+    /// Returns a Boolean value that indicates whether the given event is a
+    /// local copy of an event that the global monitor also receives.
+    ///
+    /// On macOS 27 and later, a click on one of Ice's own status items is
+    /// first received by the global monitor, then forwarded to the item's
+    /// window, where the local monitor receives it again (at a slightly
+    /// different location and timestamp).
+    private func isLocalStatusItemEventDuplicate(_ event: NSEvent) -> Bool {
+        guard
+            ControlItem.isStatusItemHostedByMenuBarAgent,
+            let window = event.window
+        else {
+            return false
+        }
+        return window.className == "NSStatusBarWindow"
+    }
 
     // MARK: Handle Show On Click
 
@@ -271,7 +297,7 @@ extension EventManager {
         guard
             let appState,
             appState.settingsManager.generalSettingsManager.showOnHover,
-            !appState.settingsManager.generalSettingsManager.useIceBar,
+            !appState.settingsManager.generalSettingsManager.isIceBarEnabled,
             isMouseInsideMenuBar
         else {
             return
@@ -490,8 +516,72 @@ extension EventManager {
         else {
             return false
         }
+        if ControlItem.isStatusItemHostedByMenuBarAgent {
+            return isAccessibilityMenuBarItem(at: mouseLocation)
+        }
         let menuBarItems = MenuBarItem.getMenuBarItems(on: screen.displayID, onScreenOnly: true, activeSpaceOnly: true)
         return menuBarItems.contains { $0.frame.contains(mouseLocation) }
+    }
+
+    /// Returns a Boolean value that indicates whether the accessibility element
+    /// at the given location, specified in Core Graphics coordinates, is a menu
+    /// bar item.
+    ///
+    /// On macOS 27 and later, menu bar items are no longer represented by window
+    /// server windows, so ``MenuBarItem/getMenuBarItems(on:onScreenOnly:activeSpaceOnly:)``
+    /// returns nothing. Hit test the accessibility hierarchy instead.
+    private func isAccessibilityMenuBarItem(at location: CGPoint) -> Bool {
+        let systemWide = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(systemWide, 0.1)
+        var element: AXUIElement?
+        guard
+            AXUIElementCopyElementAtPosition(systemWide, Float(location.x), Float(location.y), &element) == .success,
+            var current = element
+        else {
+            return false
+        }
+        // The element at the location may be a descendant of the item.
+        for _ in 0..<4 {
+            var role: CFTypeRef?
+            AXUIElementCopyAttributeValue(current, kAXRoleAttribute as CFString, &role)
+            if (role as? String) == (kAXMenuBarItemRole as String) {
+                return !isExpandedControlItem(current)
+            }
+            var parent: CFTypeRef?
+            guard
+                AXUIElementCopyAttributeValue(current, kAXParentAttribute as CFString, &parent) == .success,
+                let parent,
+                CFGetTypeID(parent) == AXUIElementGetTypeID()
+            else {
+                return false
+            }
+            current = parent as! AXUIElement // swiftlint:disable:this force_cast
+        }
+        return false
+    }
+
+    /// Returns a Boolean value that indicates whether the given accessibility
+    /// element is one of Ice's own control items while it is expanded to hide
+    /// a section. The space it occupies should be treated as empty.
+    private func isExpandedControlItem(_ element: AXUIElement) -> Bool {
+        var pid: pid_t = 0
+        guard
+            AXUIElementGetPid(element, &pid) == .success,
+            pid == ProcessInfo.processInfo.processIdentifier
+        else {
+            return false
+        }
+        var value: CFTypeRef?
+        var size = CGSize.zero
+        guard
+            AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &value) == .success,
+            let value,
+            CFGetTypeID(value) == AXValueGetTypeID(),
+            AXValueGetValue(value as! AXValue, .cgSize, &size) // swiftlint:disable:this force_cast
+        else {
+            return false
+        }
+        return size.width >= ControlItem.Lengths.expanded / 2
     }
 
     /// A Boolean value that indicates whether the mouse pointer is within
