@@ -297,7 +297,7 @@ extension EventManager {
         guard
             let appState,
             appState.settingsManager.generalSettingsManager.showOnHover,
-            !appState.settingsManager.generalSettingsManager.isIceBarEnabled,
+            !appState.settingsManager.generalSettingsManager.useIceBar,
             isMouseInsideMenuBar
         else {
             return

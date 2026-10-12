@@ -136,10 +136,11 @@ final class IceBarPanel: NSPanel {
                 guard
                     lowerBound <= upperBound,
                     let section = appState.menuBarManager.section(withName: .visible),
-                    let windowID = section.controlItem.windowID,
                     // Bridging.getWindowFrame is more reliable than ControlItem.windowFrame,
-                    // i.e. if the control item is offscreen.
-                    let itemFrame = Bridging.getWindowFrame(for: windowID)
+                    // i.e. if the control item is offscreen. On macOS 27 and later, the
+                    // control item doesn't have a window server window, so fall back to
+                    // its window's frame, which has the same horizontal position.
+                    let itemFrame = section.controlItem.windowID.flatMap(Bridging.getWindowFrame) ?? section.controlItem.window?.frame
                 else {
                     return originForRightOfScreen
                 }
@@ -161,6 +162,13 @@ final class IceBarPanel: NSPanel {
         currentSection = section
 
         await appState.itemManager.cacheItemsIfNeeded()
+
+        if
+            ControlItem.isStatusItemHostedByMenuBarAgent,
+            let dividerX = appState.menuBarManager.section(withName: .hidden)?.controlItem.window?.frame.midX
+        {
+            await appState.accessibilityItems.updateHiddenItems(dividerX: dividerX)
+        }
 
         if ScreenCapture.cachedCheckPermissions() {
             await appState.imageCache.updateCache()
@@ -207,6 +215,7 @@ private final class IceBarHostingView: NSHostingView<AnyView> {
             rootView: IceBarContentView(screen: screen, section: section, closePanel: closePanel)
                 .environmentObject(appState)
                 .environmentObject(appState.imageCache)
+                .environmentObject(appState.accessibilityItems)
                 .environmentObject(appState.itemManager)
                 .environmentObject(appState.menuBarManager)
                 .environmentObject(colorManager)
@@ -308,7 +317,9 @@ private struct IceBarContentView: View {
 
     @ViewBuilder
     private var content: some View {
-        if !ScreenCapture.cachedCheckPermissions() {
+        if ControlItem.isStatusItemHostedByMenuBarAgent {
+            AccessibilityIceBarItemsView(closePanel: closePanel)
+        } else if !ScreenCapture.cachedCheckPermissions() {
             HStack {
                 Text("The Ice Bar requires screen recording permissions.")
 
@@ -401,7 +412,7 @@ private struct IceBarItemView: View {
             Image(nsImage: image)
                 .contentShape(Rectangle())
                 .overlay {
-                    IceBarItemClickView(item: item, leftClickAction: leftClickAction, rightClickAction: rightClickAction)
+                    IceBarItemClickView(toolTip: item.displayName, leftClickAction: leftClickAction, rightClickAction: rightClickAction)
                 }
                 .accessibilityLabel(item.displayName)
                 .accessibilityAction(named: "left click", leftClickAction)
@@ -410,12 +421,78 @@ private struct IceBarItemView: View {
     }
 }
 
+// MARK: - AccessibilityIceBarItemsView
+
+/// The Ice Bar's content on macOS 27 and later, where menu bar items are
+/// discovered through the accessibility hierarchy.
+private struct AccessibilityIceBarItemsView: View {
+    @EnvironmentObject var accessibilityItems: AccessibilityMenuBarItems
+
+    let closePanel: () -> Void
+
+    var body: some View {
+        if accessibilityItems.hiddenItems.isEmpty {
+            Text("No hidden menu bar items")
+                .padding(.horizontal, 10)
+        } else {
+            ScrollView(.horizontal) {
+                HStack(spacing: 0) {
+                    ForEach(accessibilityItems.hiddenItems) { item in
+                        AccessibilityIceBarItemView(item: item, closePanel: closePanel)
+                    }
+                }
+            }
+            .defaultScrollAnchor(.trailing)
+        }
+    }
+}
+
+// MARK: - AccessibilityIceBarItemView
+
+private struct AccessibilityIceBarItemView: View {
+    @EnvironmentObject var accessibilityItems: AccessibilityMenuBarItems
+
+    let item: AccessibilityMenuBarItem
+    let closePanel: () -> Void
+
+    private var action: () -> Void {
+        return { [weak accessibilityItems] in
+            closePanel()
+            Task {
+                try await Task.sleep(for: .milliseconds(25))
+                accessibilityItems?.press(item)
+            }
+        }
+    }
+
+    var body: some View {
+        Group {
+            if let image = accessibilityItems.images[item.id] {
+                // An image of the item, captured the last time it was shown.
+                Image(nsImage: image)
+            } else if let icon = item.applicationIcon {
+                // Images can only be captured while the item is shown, so fall
+                // back to the icon of the application that owns the item.
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 18, height: 18)
+                    .frame(width: max(item.frame.width, 26))
+            }
+        }
+        .contentShape(Rectangle())
+        .overlay {
+            IceBarItemClickView(toolTip: item.displayName, leftClickAction: action, rightClickAction: action)
+        }
+        .accessibilityLabel(item.displayName)
+        .accessibilityAction(named: "click", action)
+    }
+}
+
 // MARK: - IceBarItemClickView
 
 private struct IceBarItemClickView: NSViewRepresentable {
     private final class Represented: NSView {
-        let item: MenuBarItem
-
         let leftClickAction: () -> Void
         let rightClickAction: () -> Void
 
@@ -425,12 +502,11 @@ private struct IceBarItemClickView: NSViewRepresentable {
         private var lastLeftMouseDownLocation = CGPoint.zero
         private var lastRightMouseDownLocation = CGPoint.zero
 
-        init(item: MenuBarItem, leftClickAction: @escaping () -> Void, rightClickAction: @escaping () -> Void) {
-            self.item = item
+        init(toolTip: String, leftClickAction: @escaping () -> Void, rightClickAction: @escaping () -> Void) {
             self.leftClickAction = leftClickAction
             self.rightClickAction = rightClickAction
             super.init(frame: .zero)
-            self.toolTip = item.displayName
+            self.toolTip = toolTip
         }
 
         @available(*, unavailable)
@@ -477,13 +553,13 @@ private struct IceBarItemClickView: NSViewRepresentable {
         }
     }
 
-    let item: MenuBarItem
+    let toolTip: String
 
     let leftClickAction: () -> Void
     let rightClickAction: () -> Void
 
     func makeNSView(context: Context) -> NSView {
-        Represented(item: item, leftClickAction: leftClickAction, rightClickAction: rightClickAction)
+        Represented(toolTip: toolTip, leftClickAction: leftClickAction, rightClickAction: rightClickAction)
     }
 
     func updateNSView(_ nsView: NSView, context: Context) { }

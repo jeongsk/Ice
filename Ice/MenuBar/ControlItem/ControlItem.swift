@@ -387,7 +387,7 @@ final class ControlItem {
                     else {
                         return
                     }
-                    if useIceBar && !Self.isStatusItemHostedByMenuBarAgent {
+                    if useIceBar {
                         button.sendAction(on: [.leftMouseDown, .rightMouseUp])
                     } else {
                         button.sendAction(on: [.leftMouseUp, .rightMouseUp])

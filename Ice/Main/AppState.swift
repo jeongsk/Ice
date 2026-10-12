@@ -39,6 +39,9 @@ final class AppState: ObservableObject {
     /// Global cache for menu bar item images.
     private(set) lazy var imageCache = MenuBarItemImageCache(appState: self)
 
+    /// Menu bar items discovered through the accessibility hierarchy (macOS 27 and later).
+    let accessibilityItems = AccessibilityMenuBarItems()
+
     /// Manager for menu bar item spacing.
     let spacingManager = MenuBarItemSpacingManager()
 

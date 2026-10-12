@@ -51,7 +51,7 @@ final class MenuBarSection {
 
     /// A Boolean value that indicates whether the Ice Bar should be used.
     private var useIceBar: Bool {
-        appState?.settingsManager.generalSettingsManager.isIceBarEnabled ?? false
+        appState?.settingsManager.generalSettingsManager.useIceBar ?? false
     }
 
     /// A weak reference to the menu bar manager's Ice Bar panel.
@@ -166,6 +166,7 @@ final class MenuBarSection {
             }
             controlItem.state = .showItems
             hiddenSection.controlItem.state = .showItems
+            captureAccessibilityItemImages()
         case .hidden:
             iceBarPanel?.close()
             guard let visibleSection = appState.menuBarManager.section(withName: .visible) else {
@@ -173,6 +174,7 @@ final class MenuBarSection {
             }
             controlItem.state = .showItems
             visibleSection.controlItem.state = .showItems
+            captureAccessibilityItemImages()
         case .alwaysHidden:
             iceBarPanel?.close()
             guard
@@ -186,6 +188,34 @@ final class MenuBarSection {
             visibleSection.controlItem.state = .showItems
         }
         startRehideChecks()
+    }
+
+    /// Captures images of the hidden section's items for the Ice Bar while they
+    /// are shown in the menu bar.
+    ///
+    /// On macOS 27 and later, the items that are hidden by Ice are moved into
+    /// MenuBarAgent's overflow menu, so the only time that images of them can
+    /// be captured is while they are shown.
+    private func captureAccessibilityItemImages() {
+        guard
+            ControlItem.isStatusItemHostedByMenuBarAgent,
+            ScreenCapture.cachedCheckPermissions(),
+            let appState,
+            let hiddenSection = appState.menuBarManager.section(withName: .hidden)
+        else {
+            return
+        }
+        Task {
+            // Wait for MenuBarAgent to finish moving the items into place.
+            try? await Task.sleep(for: .seconds(1))
+            guard
+                !hiddenSection.isHidden,
+                let dividerX = hiddenSection.controlItem.window?.frame.midX
+            else {
+                return
+            }
+            await appState.accessibilityItems.captureHiddenItemImages(dividerX: dividerX)
+        }
     }
 
     /// Hides the section.

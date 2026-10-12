@@ -80,6 +80,28 @@ enum ScreenCapture {
     static func captureWindow(_ windowID: CGWindowID, screenBounds: CGRect? = nil, option: CGWindowImageOption = []) -> CGImage? {
         captureWindows([windowID], screenBounds: screenBounds, option: option)
     }
+
+    /// Captures an image of everything that is currently on screen within the
+    /// given bounds, specified in Core Graphics coordinates.
+    ///
+    /// - Parameters:
+    ///   - screenBounds: The bounds to capture.
+    ///   - option: Options that specify the image to be captured.
+    static func captureScreenBounds(_ screenBounds: CGRect, option: CGWindowImageOption = []) -> CGImage? {
+        // CGWindowListCreateImage is unavailable in the macOS 27 SDK, but still
+        // exists at runtime. ScreenCaptureKit requires an asynchronous stream.
+        typealias CreateImage = @convention(c) (CGRect, UInt32, CGWindowID, UInt32) -> Unmanaged<CGImage>?
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else {
+            return nil
+        }
+        let createImage = unsafeBitCast(symbol, to: CreateImage.self)
+        return createImage(
+            screenBounds,
+            CGWindowListOption.optionOnScreenOnly.rawValue,
+            kCGNullWindowID,
+            option.rawValue
+        )?.takeRetainedValue()
+    }
 }
 
 /// A protocol used to suppress deprecation warnings for the `CGWindowList` screen capture APIs.
